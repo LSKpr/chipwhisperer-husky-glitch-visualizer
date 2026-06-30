@@ -4,6 +4,10 @@ An offline, browser-based tool for understanding the clock/voltage glitches prod
 
 Tune the glitch parameters (offset, width, repeat, external offset, trigger, clock source) and instantly see the resulting pulse on an interactive timeline — no hardware required. Then export the matching ChipWhisperer Python so you can run it for real.
 
+![Controls and timeline view](screenshots/timeline.png)
+
+![Python export panel](screenshots/python-export.png)
+
 ## Why
 
 Husky glitch settings are abstract: values in *steps* that map non-linearly to *nanoseconds* and *degrees*. This tool makes them visual, so you can build intuition for what a given configuration actually does before touching the target.
