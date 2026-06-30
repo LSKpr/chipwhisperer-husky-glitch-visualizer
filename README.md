@@ -10,7 +10,7 @@ Tune the glitch parameters (offset, width, repeat, external offset, trigger, clo
 
 ## Why
 
-Husky glitch settings are abstract: values in *steps* that map non-linearly to *nanoseconds* and *degrees*. This tool makes them visual, so you can build intuition for what a given configuration actually does before touching the target.
+Husky glitch settings are abstract: values are in *steps*, which scale to *nanoseconds* and *degrees* depending on your clock frequency and phase-shift resolution, so the same step count means different real timing on different setups. This tool makes them visual, so you can build intuition for what a given configuration actually does before touching the target.
 
 ## Run
 
