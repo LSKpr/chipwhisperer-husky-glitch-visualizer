@@ -31,4 +31,4 @@ npm run test     # unit tests
 - **Projects** — save/load as JSON, undo/redo history, starter preset.
 - **Unit converter** — steps ↔ ns ↔ degrees, with glossary tooltips throughout.
 
-Built with React + TypeScript + Vite. Windows-first, runs fully offline.
+Built with React + TypeScript + Vite. Runs fully offline in the browser.
