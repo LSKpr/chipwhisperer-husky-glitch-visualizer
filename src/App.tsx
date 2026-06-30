@@ -244,17 +244,19 @@ export default function App() {
     simulation.eventStartSteps,
   ]);
 
+  // Arrays are sample-indexed; each sample spans `sampleStride` true steps.
+  const samplePx = simulation.stepPx * simulation.sampleStride;
   const clockPath = useMemo(
-    () => digitalPathFromSamples(simulation.clock, simulation.stepPx, 20, 60),
-    [simulation.clock, simulation.stepPx],
+    () => digitalPathFromSamples(simulation.clock, samplePx, 20, 60),
+    [simulation.clock, samplePx],
   );
   const glitchInputPath = useMemo(
-    () => digitalPathFromSamples(simulation.glitchInput, simulation.stepPx, 20, 60),
-    [simulation.glitchInput, simulation.stepPx],
+    () => digitalPathFromSamples(simulation.glitchInput, samplePx, 20, 60),
+    [simulation.glitchInput, samplePx],
   );
   const combinedOutputPath = useMemo(
-    () => digitalPathFromSamples(simulation.combinedOutput, simulation.stepPx, 20, 60),
-    [simulation.combinedOutput, simulation.stepPx],
+    () => digitalPathFromSamples(simulation.combinedOutput, samplePx, 20, 60),
+    [simulation.combinedOutput, samplePx],
   );
 
   const hpEnabled = project.glitch.hpEnabled;
@@ -330,10 +332,11 @@ export default function App() {
 
   const glitchAnnotations = useMemo<TimeAnnotation[]>(() => {
     const segments = findHighSegments(simulation.glitchInput);
+    const stride = simulation.sampleStride;
     return segments.map((seg, idx) => {
-      const startPx = seg.startStep * simulation.stepPx;
-      const endPx = seg.endStep * simulation.stepPx;
-      const widthSteps = seg.endStep - seg.startStep;
+      const startPx = seg.startStep * stride * simulation.stepPx;
+      const endPx = seg.endStep * stride * simulation.stepPx;
+      const widthSteps = (seg.endStep - seg.startStep) * stride;
       return {
         id: `glitch-seg-${idx}`,
         startPx,
@@ -342,15 +345,16 @@ export default function App() {
       };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [simulation.glitchInput, simulation.stepPx, secondsPerStep, displayUnit, phaseShiftStepsSafe]);
+  }, [simulation.glitchInput, simulation.stepPx, simulation.sampleStride, secondsPerStep, displayUnit, phaseShiftStepsSafe]);
 
   const combinedAnnotations = useMemo<TimeAnnotation[]>(() => {
     const segments = findAllSegments(simulation.combinedOutput);
+    const stride = simulation.sampleStride;
     return segments
       .map((seg, idx) => {
-        const widthSteps = seg.endStep - seg.startStep;
-        const startPx = seg.startStep * simulation.stepPx;
-        const endPx = seg.endStep * simulation.stepPx;
+        const widthSteps = (seg.endStep - seg.startStep) * stride;
+        const startPx = seg.startStep * stride * simulation.stepPx;
+        const endPx = seg.endStep * stride * simulation.stepPx;
         const pxSpan = endPx - startPx;
         return {
           id: `combined-seg-${idx}`,
@@ -364,7 +368,7 @@ export default function App() {
       .filter((a) => a.pxSpan >= 18)
       .map(({ pxSpan: _pxSpan, ...rest }) => rest);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [simulation.combinedOutput, simulation.stepPx, secondsPerStep, displayUnit, phaseShiftStepsSafe]);
+  }, [simulation.combinedOutput, simulation.stepPx, simulation.sampleStride, secondsPerStep, displayUnit, phaseShiftStepsSafe]);
 
   const setProject = (next: GlitchProject): void => {
     history.set(next);
@@ -551,8 +555,8 @@ export default function App() {
   const isMultiGlitch = numGlitches > 1;
 
   const crowbarHighSteps = useMemo(
-    () => simulation.glitchInput.reduce((acc, v) => acc + (v ? 1 : 0), 0),
-    [simulation.glitchInput],
+    () => simulation.glitchInput.reduce((acc, v) => acc + (v ? 1 : 0), 0) * simulation.sampleStride,
+    [simulation.glitchInput, simulation.sampleStride],
   );
   const crowbarOnTimeSec = crowbarHighSteps * secondsPerStep;
   const totalSimSec = simulation.totalSteps * secondsPerStep;

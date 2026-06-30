@@ -56,9 +56,10 @@ describe("simulation width semantics", () => {
     };
     const starts = getGlitchEventStartSteps(project);
     expect(starts).toHaveLength(3);
+    // Husky: start[0] = ext_offset[0]*phase + offset; start[i>0] = start[i-1] + (2 + ext_offset[i])*phase.
     expect(starts[0]).toBe(1 * phase + 5);
-    expect(starts[1]).toBe(starts[0] + 2 * phase + 4 * phase);
-    expect(starts[2]).toBe(starts[1] + 3 * phase + 2 * phase);
+    expect(starts[1]).toBe(starts[0] + (2 + 4) * phase);
+    expect(starts[2]).toBe(starts[1] + (2 + 2) * phase);
   });
 
   test("multi-glitch simulation emits all events in glitchInput", () => {
@@ -98,6 +99,31 @@ describe("simulation width semantics", () => {
     for (let i = 0; i < sim.totalSteps; i += 1) {
       expect(sim.combinedOutput[i]).toBe(sim.clock[i] || sim.glitchInput[i]);
     }
+  });
+
+  test("low clock speed (huge phaseShiftSteps) keeps render arrays bounded", () => {
+    // 100 kHz target clock against the default 800 MHz VCO => phase = 56 * 8000.
+    const phase = 56 * 8000;
+    const project = {
+      ...DEFAULT_PROJECT,
+      clock: { ...DEFAULT_PROJECT.clock, sourceFrequencyHz: 100_000, phaseShiftSteps: phase },
+    };
+    const sim = simulateWaveforms(project, 600, 2);
+
+    // True step count is in the millions; render arrays must stay bounded.
+    expect(sim.totalSteps).toBeGreaterThan(1_000_000);
+    expect(sim.sampleStride).toBeGreaterThan(1);
+    expect(sim.clock.length).toBeLessThanOrEqual(100_000);
+    expect(sim.clock.length).toBe(sim.glitchInput.length);
+    expect(sim.clock.length).toBe(sim.combinedOutput.length);
+    // Glitch must still be visible (not dropped by downsampling).
+    expect(sim.glitchInput.some(Boolean)).toBe(true);
+  });
+
+  test("default clock speed renders at full resolution (stride = 1)", () => {
+    const sim = simulateWaveforms(DEFAULT_PROJECT, 600, 2);
+    expect(sim.sampleStride).toBe(1);
+    expect(sim.clock.length).toBe(sim.totalSteps);
   });
 
   test("crowbar_visualizer mode uses AND(NOT(glitch_input), target_clock)", () => {

@@ -171,10 +171,11 @@ describe("multi-glitch editor", () => {
 
     const updatedText = screen.getByTestId("glitch-event-start-2").textContent ?? "";
     expect(updatedText).not.toBe(initialText);
+    // Husky: start[i>0] = start[i-1] + (2 + ext_offset[i])*phase (start-relative, repeat-independent).
     // start[0] = 1*4480 + 0 = 4480
-    // start[1] = 4480 + 2*4480 + 7*4480 = 4480 + 9*4480 = 44800
-    // start[2] = 44800 + 1*4480 + 0*4480 = 49280
-    expect(updatedText).toContain("49280");
+    // start[1] = 4480 + (2 + 7)*4480 = 44800
+    // start[2] = 44800 + (2 + 0)*4480 = 53760
+    expect(updatedText).toContain("53760");
     void phase;
   });
 

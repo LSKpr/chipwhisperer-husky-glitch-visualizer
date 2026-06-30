@@ -4,6 +4,15 @@ export interface WaveformSimulation {
   totalCycles: number;
   totalSteps: number;
   stepPx: number;
+  /**
+   * Number of true phase-shift steps represented by each element of the
+   * `clock`/`glitchInput`/`combinedOutput` arrays. 1 means the arrays are at
+   * full resolution; a larger value means the arrays were downsampled to keep
+   * rendering cheap when `phaseShiftSteps` is very large (i.e. low clock speed).
+   * Consumers must multiply array-index based measurements by this to recover
+   * true step units, and multiply `stepPx` by this to get pixels-per-sample.
+   */
+  sampleStride: number;
   clock: boolean[];
   glitchInput: boolean[];
   combinedOutput: boolean[];
@@ -12,6 +21,15 @@ export interface WaveformSimulation {
   eventStartSteps: number[];
   eventWidths: number[];
 }
+
+/**
+ * Upper bound on the number of samples materialized for the rendered waveforms.
+ * A digital square wave needs far fewer samples than the simulator's true step
+ * resolution (which can reach millions at low clock speeds). Capping here keeps
+ * array allocation and SVG path generation cheap without affecting the
+ * true-step math used for labels, time conversions, and edge markers.
+ */
+const MAX_RENDER_SAMPLES = 100_000;
 
 function toOutputModeCombine(mode: OutputMode, clock: boolean, glitch: boolean): boolean {
   switch (mode) {
@@ -52,13 +70,15 @@ export function getPrimaryGlitchWidthSteps(project: GlitchProject): number {
  * Returns the cumulative start step (relative to the trigger at step 0) of every
  * glitch event in the train, length = numGlitches.
  *
- * Semantics (per Husky docs):
+ * Semantics (per Husky docs — ChipWhispererGlitch.py):
  *   start[0] = extOffset[0] * phase + offset
- *   start[i] = start[i-1] + repeat[i-1] * phase + extOffset[i] * phase   (i > 0)
+ *   start[i] = start[i-1] + (2 + extOffset[i]) * phase   (i > 0)
  *
- * For i > 0 we add `repeat[i-1] * phase` to account for the full span of the
- * previous event (one clock cycle per pulse, matching the enable_only width
- * definition), and then the gap ext_offset[i] cycles before event i starts.
+ * Husky issues glitch i "2 + ext_offset[i] cycles after the START of glitch i-1"
+ * (a fixed 2-cycle pipeline latency plus the per-event gap), independent of the
+ * previous event's repeat count. That start-relative spacing is also why
+ * repeat[i] must stay <= ext_offset[i+1] + 1 (validation.ts): a longer pulse
+ * train would otherwise overlap the next event.
  */
 export function getGlitchEventStartSteps(project: GlitchProject): number[] {
   const n = Math.max(1, project.glitch.numGlitches);
@@ -69,9 +89,8 @@ export function getGlitchEventStartSteps(project: GlitchProject): number[] {
       const ext0 = project.glitch.extOffset[0] ?? 0;
       starts.push(Math.round(ext0 * phase + project.glitch.offsetSteps));
     } else {
-      const prevRepeat = Math.max(1, project.glitch.repeat[i - 1] ?? 1);
       const extI = project.glitch.extOffset[i] ?? 0;
-      starts.push(Math.round(starts[i - 1] + prevRepeat * phase + extI * phase));
+      starts.push(Math.round(starts[i - 1] + (2 + extI) * phase));
     }
   }
   return starts;
@@ -103,42 +122,55 @@ export function simulateWaveforms(project: GlitchProject, pxPerCycle: number, mi
   const totalSteps = totalCycles * phase;
   const stepPx = pxPerCycle / phase;
 
-  const clock: boolean[] = new Array(totalSteps).fill(false);
-  const glitchInput: boolean[] = new Array(totalSteps).fill(false);
-  const combinedOutput: boolean[] = new Array(totalSteps).fill(false);
+  // Downsample the rendered arrays when the true step count is large (low clock
+  // speed). Each sample then represents `sampleStride` true steps. `stepPx`
+  // stays in px-per-true-step so scalar measurements (event markers, widths)
+  // remain exact; sample-indexed measurements are scaled by `sampleStride`.
+  const sampleStride = Math.max(1, Math.ceil(totalSteps / MAX_RENDER_SAMPLES));
+  const numSamples = Math.ceil(totalSteps / sampleStride);
 
-  for (let step = 0; step < totalSteps; step += 1) {
-    const phaseStep = step % phase;
-    clock[step] = phaseStep < phase / 2;
+  const clock: boolean[] = new Array(numSamples).fill(false);
+  const glitchInput: boolean[] = new Array(numSamples).fill(false);
+  const combinedOutput: boolean[] = new Array(numSamples).fill(false);
+
+  for (let s = 0; s < numSamples; s += 1) {
+    // Point-sample the clock at the start of each bucket.
+    const phaseStep = (s * sampleStride) % phase;
+    clock[s] = phaseStep < phase / 2;
   }
+
+  // Mark a glitch interval [startStep, endStep) in true steps onto the samples,
+  // OR-ing over each bucket so narrow pulses are never dropped by downsampling.
+  const markGlitch = (startStep: number, endStep: number): void => {
+    const sFrom = Math.max(0, Math.floor(startStep / sampleStride));
+    const sTo = Math.min(numSamples, Math.ceil(endStep / sampleStride));
+    for (let s = sFrom; s < sTo; s += 1) {
+      glitchInput[s] = true;
+    }
+  };
 
   for (let i = 0; i < numEvents; i += 1) {
     const start = eventStartSteps[i];
     const repeat = Math.max(1, project.glitch.repeat[i] ?? 1);
     if (mode === "enable_only") {
-      const end = start + eventWidths[i];
-      for (let step = Math.max(0, start); step < Math.min(totalSteps, end); step += 1) {
-        glitchInput[step] = true;
-      }
+      markGlitch(start, start + eventWidths[i]);
     } else {
       for (let pulseIndex = 0; pulseIndex < repeat; pulseIndex += 1) {
         const pulseStart = start + pulseIndex * phase;
-        const pulseEnd = pulseStart + pulseWidth;
-        for (let step = Math.max(0, pulseStart); step < Math.min(totalSteps, pulseEnd); step += 1) {
-          glitchInput[step] = true;
-        }
+        markGlitch(pulseStart, pulseStart + pulseWidth);
       }
     }
   }
 
-  for (let step = 0; step < totalSteps; step += 1) {
-    combinedOutput[step] = toOutputModeCombine(mode, clock[step], glitchInput[step]);
+  for (let s = 0; s < numSamples; s += 1) {
+    combinedOutput[s] = toOutputModeCombine(mode, clock[s], glitchInput[s]);
   }
 
   return {
     totalCycles,
     totalSteps,
     stepPx,
+    sampleStride,
     clock,
     glitchInput,
     combinedOutput,
