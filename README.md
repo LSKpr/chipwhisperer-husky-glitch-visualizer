@@ -32,3 +32,6 @@ npm run test     # unit tests
 - **Unit converter** — steps ↔ ns ↔ degrees, with glossary tooltips throughout.
 
 Built with React + TypeScript + Vite. Runs fully offline in the browser.
+## See also
+
+- [Husky Glitching notebook](https://github.com/newaetech/chipwhisperer-jupyter/blob/main/demos/husky/03%20-%20Husky%20Glitching.ipynb) — visualize glitches interactively in a Jupyter notebook.
